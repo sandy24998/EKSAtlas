@@ -1,15 +1,24 @@
-variable "cluster_name" {
-  default = "sandeep-cluster-1"
-}
-
 variable "region" {
-  default = "ap-south-1"
+  description = "AWS region"
+  type        = string
 }
 
-variable "node_instance_type" {
-  default = "t3.medium"
+variable "cluster_name" {
+  description = "EKS cluster name"
+  type        = string
 }
 
-variable "desired_size" {
-  default = 2
+variable "cluster_version" {
+  description = "Kubernetes version"
+  type        = string
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for VPC"
+  type        = string
+}
+
+variable "tags" {
+  description = "Common tags"
+  type        = map(string)
 }

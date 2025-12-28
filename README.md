@@ -23,32 +23,36 @@ EKSAtlas is an Infrastructure as Code (IaC) solution that automates the provisio
 ## ✨ Features
 
 - **Automated EKS Cluster Provisioning** - Create a fully functional Kubernetes cluster with a single command
-- **Worker Node Management** - Automatic scaling configuration with managed node groups
-- **IAM Integration** - Proper IAM roles and policies for secure cluster and node operations
-- **VPC Configuration** - Leverages your default VPC and subnets for simplified networking
-- **Terraform Best Practices** - Modular, scalable, and maintainable infrastructure code
-- **Version Control** - Compatible with Terraform >= 1.3.0 and AWS provider ~> 5.0
-- **Production-Ready** - Includes security policies and proper dependency management
+- **Modular VPC** - Custom VPC with public/private subnets across multiple availability zones
+- **Managed Worker Nodes** - Auto-scaling node groups with configurable instance types
+- **Enterprise-Grade Security** - IAM roles, security groups, and network policies
+- **State Management** - Remote S3 backend with DynamoDB locking for team collaboration
+- **Terraform Modules** - Uses official AWS modules for best practices and maintainability
+- **Production-Ready** - CloudWatch logging, tagging, environment-specific configurations
+- **Version Control** - Compatible with Terraform >= 1.4.0 and AWS provider ~> 5.0
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have the following installed and configured:
 
-- **Terraform** >= 1.3.0 - [Install Terraform](https://www.terraform.io/downloads.html)
+- **Terraform** >= 1.4.0 - [Install Terraform](https://www.terraform.io/downloads.html)
 - **AWS CLI** >= 2.0 - [Install AWS CLI](https://aws.amazon.com/cli/)
 - **kubectl** >= 1.24 - [Install kubectl](https://kubernetes.io/docs/tasks/tools/)
-- **AWS Account** with appropriate permissions (EKS, EC2, IAM, VPC access)
+- **AWS Account** with appropriate permissions (EKS, EC2, IAM, VPC, S3, DynamoDB access)
 - **AWS Credentials** configured locally via `aws configure`
+- **S3 Bucket** for Terraform state (optional but recommended for production)
 
 ## 📁 Project Structure
 
 ```
 EKSAtlas/
-├── providers.tf          # AWS provider configuration and Terraform version requirements
+├── versions.tf           # Terraform and provider version requirements
+├── providers.tf          # AWS provider configuration
 ├── variables.tf          # Input variables for cluster customization
-├── vpc.tf                # Data sources for VPC and subnets
-├── iam.tf                # IAM roles and policy attachments
-├── eks.tf                # EKS cluster and node group resources
+├── main.tf               # Main configuration with VPC and EKS modules
+├── outputs.tf            # Output values for cluster information
+├── backend.tf            # S3 backend with DynamoDB locking for state management
+├── terraform.tfvars      # Environment-specific variables
 ├── .gitignore            # Git ignore patterns for Terraform files
 └── README.md             # This file
 ```
@@ -71,12 +75,28 @@ terraform init
 
 ### Step 3: Review the Configuration
 
-Review the default values in `variables.tf`. Key variables:
+Review the configuration files and update `terraform.tfvars` with your values:
 
-- `cluster_name` - EKS cluster name (default: `sandeep-cluster-1`)
-- `region` - AWS region (default: `ap-south-1`)
-- `node_instance_type` - EC2 instance type for nodes (default: `t3.medium`)
-- `desired_size` - Number of worker nodes (default: `2`)
+```hcl
+# terraform.tfvars
+region          = "ap-south-1"
+cluster_name    = "sandeep-cluster-1"
+cluster_version = "1.28"
+vpc_cidr        = "10.0.0.0/16"
+
+tags = {
+  ManagedBy = "Terraform"
+  Project   = "EKSAtlas"
+  Owner     = "DevOps-Team"
+}
+```
+
+Key variables:
+- `cluster_name` - EKS cluster name
+- `region` - AWS region
+- `cluster_version` - Kubernetes version (default: 1.28)
+- `vpc_cidr` - VPC CIDR block (default: 10.0.0.0/16)
+- `tags` - Common tags for all resources
 
 ### Step 4: Validate Configuration
 
@@ -88,36 +108,68 @@ terraform validate
 
 ## ⚙️ Configuration
 
+### Prerequisites for Remote State (Production)
+
+For production environments, configure S3 backend:
+
+1. Create S3 bucket and DynamoDB table:
+```bash
+# Create S3 bucket for state
+aws s3api create-bucket \
+  --bucket eks-terraform-state-prod \
+  --region ap-south-1 \
+  --create-bucket-configuration LocationConstraint=ap-south-1
+
+# Enable versioning
+aws s3api put-bucket-versioning \
+  --bucket eks-terraform-state-prod \
+  --versioning-configuration Status=Enabled
+
+# Create DynamoDB table for state locking
+aws dynamodb create-table \
+  --table-name terraform-locks \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+  --region ap-south-1
+```
+
+2. Update `backend.tf` with your bucket name (if using different naming)
+
 ### Customizing Variables
 
-You can override default variables in multiple ways:
+You can customize variables in `terraform.tfvars` or via CLI:
 
-**Option 1: Using CLI Arguments**
-```bash
-terraform apply -var="cluster_name=my-cluster" -var="desired_size=3"
-```
-
-**Option 2: Using a `.tfvars` File**
-
-Create a `terraform.tfvars` file:
+**Option 1: Update terraform.tfvars**
 ```hcl
-cluster_name    = "my-custom-cluster"
 region          = "ap-south-1"
-node_instance_type = "t3.large"
-desired_size    = 3
+cluster_name    = "my-custom-cluster"
+cluster_version = "1.28"
+vpc_cidr        = "10.0.0.0/16"
+
+tags = {
+  ManagedBy = "Terraform"
+  Project   = "EKSAtlas"
+  Owner     = "Your-Name"
+}
 ```
 
-Then apply:
+**Option 2: Using CLI Arguments**
 ```bash
-terraform apply
+terraform apply \
+  -var="cluster_name=my-cluster" \
+  -var="cluster_version=1.28" \
+  -var="vpc_cidr=10.1.0.0/16"
 ```
 
 ### Key Components
 
-- **IAM Roles**: Separate roles for the EKS control plane and worker nodes
-- **EKS Cluster**: Managed Kubernetes control plane in your default VPC
-- **Node Group**: Managed EC2 instances for running your workloads
-- **VPC Configuration**: Uses default VPC for simplified setup
+- **VPC Module** - Custom VPC with public/private subnets, NAT gateways, and DNS configuration
+- **EKS Module** - Managed Kubernetes control plane with cluster logging enabled
+- **IAM Roles** - Service roles for EKS cluster, node groups, and OIDC provider
+- **Node Groups** - Managed EC2 instances with auto-scaling and health checks
+- **Security** - Security groups for cluster and nodes with proper ingress/egress rules
+- **Monitoring** - CloudWatch log groups for audit, API, and authenticator logs
 
 ## 📦 Deployment
 
@@ -160,25 +212,31 @@ kubectl get pods --all-namespaces
 
 ## 📤 Outputs
 
-Add an `outputs.tf` file (optional) to retrieve important cluster information:
+The `outputs.tf` file exports important cluster information:
 
 ```hcl
-output "cluster_id" {
-  value = aws_eks_cluster.eks.id
+output "cluster_name" {
+  description = "EKS cluster name"
+  value       = module.eks.cluster_name
 }
 
 output "cluster_endpoint" {
-  value = aws_eks_cluster.eks.endpoint
+  description = "Endpoint for EKS control plane"
+  value       = module.eks.cluster_endpoint
 }
 
-output "node_group_id" {
-  value = aws_eks_node_group.nodegroup.id
+output "cluster_oidc_issuer_url" {
+  description = "The URL on the EKS cluster OIDC Issuer"
+  value       = module.eks.cluster_oidc_issuer_url
 }
 ```
 
-Retrieve outputs:
+Retrieve outputs after deployment:
 ```bash
 terraform output
+
+# Or get specific output
+terraform output cluster_endpoint
 ```
 
 ## 🧹 Cleanup
@@ -199,37 +257,63 @@ When prompted, type `yes` to confirm destruction. This will:
 
 ### Common Issues
 
-**Issue: Terraform initialization fails**
+**Issue: Terraform initialization fails with backend errors**
 ```bash
-# Solution: Check AWS credentials
-aws sts get-caller-identity
+# Solution: Verify S3 bucket exists and is accessible
+aws s3 ls eks-terraform-state-prod/
 
-# Ensure AWS CLI is properly configured
-aws configure
+# If bucket doesn't exist, remove backend configuration temporarily
+rm backend.tf
+terraform init
+
+# Then recreate the S3 bucket and re-add backend.tf
 ```
 
-**Issue: EKS cluster creation fails with IAM errors**
-- Verify IAM permissions for the AWS user/role
-- Ensure trust relationships are properly configured
-- Check CloudWatch logs for more details
+**Issue: Module source errors**
+```bash
+# Clear module cache and reinitialize
+rm -rf .terraform/modules/
+terraform init
+```
 
-**Issue: Nodes not joining the cluster**
-- Verify VPC and subnet configuration
-- Check security groups for proper ingress/egress rules
-- Review node IAM role policies
+**Issue: EKS cluster creation fails**
+- Check IAM permissions for EKS, EC2, VPC operations
+- Verify AWS account limits haven't been reached
+- Check CloudWatch logs for detailed error messages
 
 **Issue: kubectl cannot connect to cluster**
 ```bash
-# Update kubeconfig with correct cluster name and region
-aws eks update-kubeconfig --region ap-south-1 --name <your-cluster-name>
+# Update kubeconfig
+aws eks update-kubeconfig --region ap-south-1 --name sandeep-cluster-1
+
+# Verify cluster access
+kubectl cluster-info
+kubectl auth can-i list nodes
+```
+
+**Issue: Nodes not joining cluster**
+- Verify security group rules allow node communication
+- Check IAM role permissions for EC2 nodes
+- Review node group logs in CloudWatch
+
+**Issue: Terraform state lock is stuck**
+```bash
+# Force unlock (use with caution)
+terraform force-unlock <LOCK_ID>
+
+# Check DynamoDB table
+aws dynamodb scan --table-name terraform-locks --region ap-south-1
 ```
 
 ## 📚 Additional Resources
 
 - [AWS EKS Documentation](https://docs.aws.amazon.com/eks/)
 - [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [Terraform AWS VPC Module](https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest)
+- [Terraform AWS EKS Module](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest)
 - [Kubernetes Documentation](https://kubernetes.io/docs/)
 - [AWS IAM Best Practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
+- [Terraform Remote State Management](https://www.terraform.io/language/state/remote)
 
 ## 🤝 Contributing
 
